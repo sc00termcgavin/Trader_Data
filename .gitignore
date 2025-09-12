@@ -1,0 +1,8 @@
+# Ignore Excel files
+*.xlsx
+
+# Python cache
+__pycache__/
+
+# VSCode workspace settings (optional)
+.vscode/

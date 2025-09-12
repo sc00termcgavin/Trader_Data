@@ -6,3 +6,5 @@ __pycache__/
 
 # VSCode workspace settings (optional)
 .vscode/
+
+.DS_Store

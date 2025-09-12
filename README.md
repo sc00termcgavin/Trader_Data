@@ -21,7 +21,7 @@ This is a project that provides a python-based betting tracker and dashboard for
 Install the required Python packages using pip:
 
 ```bash
-pip install pandas openpyxl xlsxwriter
+pip install -r requirements.txt
 ```
 
 ## 2. Running the Dashboard

@@ -2,6 +2,7 @@ import openpyxl
 from openpyxl.styles import PatternFill
 from openpyxl.formatting.rule import CellIsRule
 from datetime import datetime
+import os
 
 FILE_PATH = "Bet_Tracker.xlsx"
 
@@ -56,18 +57,9 @@ def log_bet(date, sportsbook, bet_type, selection, odds, stake=0, result="", bon
     # -------------------------------
     # Payout Formula (handles Win, Push, Loss, Bonus)
     # -------------------------------
-    #    Case 1: bonus free bet, only win profit not the stake back
-    #    G{row} = win
-    #        do {stake} * {decimal odds - 1}
-    #        if not Win, Check Push
-    #            If result = "push" return the stake from column E (this is a refund bet)
-    #        if not add zero, 
-    #    leave it blank
     if bonus:
-        # Bonus bet: payout = profit if Win, refund if Push, 0 if Loss
         ws[f"J{next_row}"] = f'=IF(G{next_row}="Win",{stake}*(I{next_row}-1),IF(G{next_row}="Push",E{next_row},0))'
     else:
-        # Normal bet: payout = stake*odds if Win, refund if Push, 0 if Loss
         ws[f"J{next_row}"] = f'=IF(G{next_row}="Win",E{next_row}*I{next_row},IF(G{next_row}="Push",E{next_row},0))'
 
     # Net PnL
@@ -85,19 +77,30 @@ def log_bet(date, sportsbook, bet_type, selection, odds, stake=0, result="", bon
                                   CellIsRule(operator='lessThan', formula=['0'], fill=red_fill))
 
     # -------------------------------
-    # Dashboard - update Pending Bets count
+    # Dashboard - update KPIs
     # -------------------------------
-    if "Dashboard" not in wb.sheetnames:
+    if "Dashboard" in wb.sheetnames:
+        ws_dash = wb["Dashboard"]
+        # Clear old values (optional)
+        for row in ws_dash.iter_rows(min_row=2, max_col=2, max_row=20):
+            for cell in row:
+                cell.value = None
+    else:
         ws_dash = wb.create_sheet("Dashboard")
         ws_dash["A1"], ws_dash["B1"] = "Metric", "Value"
-    else:
-        ws_dash = wb["Dashboard"]
 
-    # Total Pending Bets = blank results
-    ws_dash["A2"], ws_dash["B2"] = "Pending Bets", f'=COUNTIF(\'Bet Log\'!G2:G{ws.max_row},"")'
+    # Metrics
+    ws_dash["A2"], ws_dash["B2"] = "Total PnL ($)", f"=SUM('Bet Log'!K2:K{ws.max_row})"
+    ws_dash["A3"], ws_dash["B3"] = "Total Stake ($)", f"=SUM('Bet Log'!E2:E{ws.max_row})"
+    ws_dash["A4"], ws_dash["B4"] = "Wins", f'=COUNTIF(\'Bet Log\'!G2:G{ws.max_row},"Win")'
+    ws_dash["A5"], ws_dash["B5"] = "Total Bets", f'=COUNTA(\'Bet Log\'!G2:G{ws.max_row})'
+    ws_dash["A6"], ws_dash["B6"] = "Pending Bets", f'=COUNTIF(\'Bet Log\'!G2:G{ws.max_row},"")'
+    ws_dash["A7"], ws_dash["B7"] = "Win %", f"=IF(B5=0,0,B4/B5)"
+    ws_dash["A8"], ws_dash["B8"] = "ROI (%)", f"=IF(B3=0,0,B2/B3)"
 
     wb.save(FILE_PATH)
     print(f"✅ Logged bet in row {next_row}: {bet_type} - {selection} ({sportsbook})")
+
 
 # -------------------------------
 # Interactive Mode
@@ -125,6 +128,7 @@ if __name__ == "__main__":
         log_bet(date, sportsbook, bet_type, selection, odds, stake, result, bonus)
 
     print("✅ All bets logged successfully!")
+
 
 # # -------------------------------
 # # Bets

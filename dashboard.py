@@ -1,21 +1,11 @@
-import pandas as pd
 import openpyxl
-from openpyxl.chart import LineChart, BarChart, Reference, PieChart
+from openpyxl.chart import LineChart, BarChart, Reference
 from openpyxl.styles import PatternFill
 from openpyxl.formatting.rule import CellIsRule
 from datetime import datetime
-from openpyxl.chart.series import Series
 from openpyxl.chart.marker import DataPoint
 
 FILE_PATH = "Bet_Tracker.xlsx"
-
-# -------------------------------
-# Utility: Convert American odds to Decimal odds
-# -------------------------------
-def american_to_decimal(odds):
-    if pd.isna(odds) or odds == 0:
-        return 0
-    return 1 + (odds / 100 if odds > 0 else 100 / abs(odds))
 
 # -------------------------------
 # 1. Load or create Bet Log
@@ -48,22 +38,7 @@ for row in range(2, ws_log.max_row + 1):
         pass
 
 # -------------------------------
-# 2. Update formulas for existing rows
-# -------------------------------
-for row in range(2, ws_log.max_row + 1):
-    stake = f"E{row}"
-    odds = f"F{row}"
-    result = f"G{row}"
-    bonus = f"H{row}"
-    dec_odds = f"I{row}"
-
-    ws_log[dec_odds] = f'=IF(ISNUMBER({odds}),IF({odds}>0,1+{odds}/100,1+100/ABS({odds})),"")'
-    ws_log[f"J{row}"] = f'=IF({result}="Win",IF({bonus}=TRUE,{stake}*({dec_odds}-1),{stake}*{dec_odds}),0)'
-    ws_log[f"K{row}"] = f'=J{row}-{stake}'
-    ws_log[f"L{row}"] = f'=SUM(K$2:K{row})'
-
-# -------------------------------
-# 3. Conditional formatting for Net PnL
+# 2. Conditional formatting for Net PnL
 # -------------------------------
 if ws_log.max_row > 1:
     net_pnl_range = f"K2:K{ws_log.max_row}"
@@ -80,75 +55,45 @@ if ws_log.max_row > 1:
     )
 
 # -------------------------------
-# 4. Create Dashboard sheet
+# 3. Create or refresh Dashboard sheet
 # -------------------------------
 if "Dashboard" in wb.sheetnames:
     del wb["Dashboard"]
 ws_dash = wb.create_sheet("Dashboard")
 
-
 # -------------------------------
-# 5. Dynamic KPI Section
+# 4. Dynamic KPI Section
 # -------------------------------
 ws_dash["A1"], ws_dash["B1"] = "KPI", "Value"
-
-# Total PnL = sum of Net PnL column
 ws_dash["A2"], ws_dash["B2"] = "Total PnL ($)", f"=SUM('Bet Log'!K2:K{ws_log.max_row})"
-
-# Total Stake = sum of all stakes (bonus bets counted as 0)
 ws_dash["A3"], ws_dash["B3"] = "Total Stake ($)", f"=SUM('Bet Log'!E2:E{ws_log.max_row})"
-
-# Total Wins = count of "Win" in Result column
 ws_dash["A4"], ws_dash["B4"] = "Wins", f'=COUNTIF(\'Bet Log\'!G2:G{ws_log.max_row},"Win")'
-
-# Total Bets = total number of rows with a Result entered
 ws_dash["A5"], ws_dash["B5"] = "Total Bets", f'=COUNTA(\'Bet Log\'!G2:G{ws_log.max_row})'
-
-# Win % = Wins / Total Bets
-ws_dash["A6"], ws_dash["B6"] = "Win %", f"=IF(B5=0,0,B4/B5)"
-
-# ROI (%) = Total PnL / Total Stake
-ws_dash["A7"], ws_dash["B7"] = "ROI (%)", f"=IF(B3=0,0,B2/B3)"
+ws_dash["A6"], ws_dash["B6"] = "Pending Bets", f'=COUNTIF(\'Bet Log\'!G2:G{ws_log.max_row},"")'
+ws_dash["A7"], ws_dash["B7"] = "Win %", f"=IF(B5=0,0,B4/B5)"
+ws_dash["A8"], ws_dash["B8"] = "ROI (%)", f"=IF(B3=0,0,B2/B3)"
 
 # -------------------------------
 # 5. Charts
-# -------------------------------------------------------------
-# -------------------------------------------------------------
-# -------------------------------------------------------------
-# Line Chart: Cumulative PnL
+# -------------------------------
+# Line Chart: Cumulative Net PnL
 line = LineChart()
 line.title = "Cumulative Net PnL Over Time"
 line.x_axis.title = "Date"
 line.y_axis.title = "Cumulative Net PnL ($)"
 
-# X-axis = Dates (column A)
 dates = Reference(ws_log, min_col=1, min_row=2, max_row=ws_log.max_row)
-
-# Y-axis = Cumulative PnL (column L = 12)
 cumulative = Reference(ws_log, min_col=12, min_row=2, max_row=ws_log.max_row)
-
 line.add_data(cumulative, titles_from_data=False)
 line.set_categories(dates)
 
-# Style the line (make it thicker)
 line.series[0].graphicalProperties.line.width = 20000  # thicker line
-
-# Highlight negative points red, positive points green
-for idx in range(0, ws_log.max_row - 1):  
-    dp = DataPoint(idx=idx)
-    # We can't access values directly here, but Excel will render them.
-    # Trick: mark all red first, then green if needed
-    dp.graphicalProperties.line.solidFill = "FF0000"  # red
-    dp.graphicalProperties.line.prstDash = "solid"
-    line.series[0].dPt.append(dp)
-
-# Apply green color globally (positive areas)
 line.series[0].graphicalProperties.line.solidFill = "00B050"  # green
-
-
 line.height = 10
 line.width = 20
-ws_dash.add_chart(line, "A8")
+
+line.legend = None
+ws_dash.add_chart(line, "A12")
 
 # Bar Chart: Net PnL by Sportsbook
 bar = BarChart()
@@ -160,7 +105,7 @@ net_pnl = Reference(ws_log, min_col=11, min_row=2, max_row=ws_log.max_row)
 bar.add_data(net_pnl, titles_from_data=False)
 bar.set_categories(sportsbooks)
 bar.height, bar.width = 10, 20
-ws_dash.add_chart(bar, "L8")
+ws_dash.add_chart(bar, "L12")
 
 # -------------------------------
 # 6. Save workbook

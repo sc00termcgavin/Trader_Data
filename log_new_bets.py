@@ -43,11 +43,9 @@ def log_bet(date, sportsbook, bet_type, selection, odds, stake=0, result="", bon
     ws[f"I{next_row}"] = dec_odds
 
     # Payout formula
-    if bonus:
-        # For bonus bets, payout = actual profit won (real money), ignore stake
-        ws[f"J{next_row}"] = f'=IF(G{next_row}="Win",{stake},0)'
-    else:
-        ws[f"J{next_row}"] = f'=IF(G{next_row}="Win",E{next_row}*I{next_row},0)'
+    # For bonus bets: payout = (stake * (decimal odds - 1)) if Win, else 0
+    ws[f"J{next_row}"] = f'=IF(G{next_row}="Win", IF(H{next_row}=TRUE, {stake}*(I{next_row}-1), E{next_row}*I{next_row}), 0)'
+
 
     # Net PnL
     ws[f"K{next_row}"] = f'=J{next_row}-E{next_row}'
@@ -67,56 +65,56 @@ def log_bet(date, sportsbook, bet_type, selection, odds, stake=0, result="", bon
     print(f"✅ Logged bet in row {next_row}: {bet_type} - {selection} ({sportsbook})")
 
 # -------------------------------
-# Example bets
+# Bets
 # -------------------------------
 
-# # 1. Fanatics $10 moneyline loss
-# log_bet(
-#     date="9/11/25",
-#     sportsbook="Fanatics",
-#     bet_type="Moneyline",
-#     selection="Kansas City Chiefs ML vs LA Chargers",
-#     odds=-170,
-#     stake=10,
-#     result="Loss",
-#     bonus=False
-# )
+# 1. Fanatics $10 moneyline loss
+log_bet(
+    date="9/11/25",
+    sportsbook="Fanatics",
+    bet_type="Moneyline",
+    selection="Kansas City Chiefs ML vs LA Chargers",
+    odds=-170,
+    stake=10,
+    result="Loss",
+    bonus=False
+)
 
-# # 2. Hard Rock $5 ML win
-# log_bet(
-#     date="9/11/25",
-#     sportsbook="Hard Rock",
-#     bet_type="Moneyline",
-#     selection="Reds vs Padraes",
-#     odds=-950,
-#     stake=5,
-#     result="Win",
-#     bonus=False
-# )
+# 2. Hard Rock $5 ML win
+log_bet(
+    date="9/11/25",
+    sportsbook="Hard Rock",
+    bet_type="Moneyline",
+    selection="Reds vs Padraes",
+    odds=-950,
+    stake=5,
+    result="Win",
+    bonus=False
+)
 
-# # 3. Hard Rock $80 EVEN loss (+125)
-# log_bet(
-#     date="9/11/25",
-#     sportsbook="Hard Rock",
-#     bet_type="Total Points Odd/Even",
-#     selection="Washington Commanders vs Green Bay Packers - Even",
-#     odds=125,
-#     stake=80,
-#     result="Loss",
-#     bonus=False
-# )
+# 3. Hard Rock $80 EVEN loss (+125)
+log_bet(
+    date="9/11/25",
+    sportsbook="Hard Rock",
+    bet_type="Total Points Odd/Even",
+    selection="Washington Commanders vs Green Bay Packers - Even",
+    odds=125,
+    stake=80,
+    result="Loss",
+    bonus=False
+)
 
-# # 4. Fanatics $100 bonus bet on Total Points ODD (-125) -> won $80
-# log_bet(
-#     date="9/11/25",
-#     sportsbook="Fanatics",
-#     bet_type="Total Points Odd/Even",
-#     selection="Washington Commanders vs Green Bay Packers - Odd",
-#     odds=-125,
-#     stake=80,  # real money won from bonus
-#     result="Win",
-#     bonus=True
-# )
+# 4. Fanatics $100 bonus bet on Total Points ODD (-125) -> won $80
+log_bet(
+    date="9/11/25",
+    sportsbook="Fanatics",
+    bet_type="Total Points Odd/Even",
+    selection="Washington Commanders vs Green Bay Packers - Odd",
+    odds=-125,
+    stake=80,  # real money won from bonus
+    result="Win",
+    bonus=True
+)
 
 # 5. Hard Rock Bets $25 bonus bet on 4-leg parlay (+364) -> potential win of 90.9
 log_bet(

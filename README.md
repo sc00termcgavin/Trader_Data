@@ -38,3 +38,17 @@ python dashboard.py
 ```bash
 python log_new_bets.py
 ```
+
+
+what was added:
+
+	1.	Handles Win, Loss, Push, and pending bets correctly
+	2.	Losses no longer give #VALUE! errors
+	3.	Net PnL and Cumulative PnL auto-calculate
+	4.	Dashboard automatically shows Pending Bets count
+	5.	Default date = today, can override manually
+	6.	Interactive input allows multiple bets in one session
+
+⸻
+
+If you want, I can also add auto-updating the Dashboard with Total Bets, Wins, ROI, etc., so it’s a full summary like your old version.

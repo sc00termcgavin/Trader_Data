@@ -1,7 +1,7 @@
 import openpyxl
 from openpyxl.styles import PatternFill
 from openpyxl.formatting.rule import CellIsRule
-import pandas as pd
+from datetime import datetime
 
 FILE_PATH = "Bet_Tracker.xlsx"
 
@@ -21,9 +21,20 @@ def log_bet(date, sportsbook, bet_type, selection, odds, stake=0, result="", bon
     Append a single bet to Bet Tracker.
     Bonus bets: stake is 0, payout = real money won.
     """
-    # Load workbook
-    wb = openpyxl.load_workbook(FILE_PATH)
-    ws = wb["Bet Log"]
+    # Load workbook or create if not exist
+    try:
+        wb = openpyxl.load_workbook(FILE_PATH)
+        ws = wb["Bet Log"]
+    except FileNotFoundError:
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "Bet Log"
+        headers = [
+            "Date", "Sportsbook", "Bet Type", "Selection",
+            "Stake ($)", "Odds", "Result", "Bonus",
+            "Decimal Odds", "Payout ($)", "Net PnL ($)", "Cumulative PnL ($)"
+        ]
+        ws.append(headers)
 
     next_row = ws.max_row + 1
 
@@ -42,22 +53,28 @@ def log_bet(date, sportsbook, bet_type, selection, odds, stake=0, result="", bon
     ws[f"H{next_row}"] = bonus
     ws[f"I{next_row}"] = dec_odds
 
-    # Payout formula (handles bonus bets correctly)
-    # For bonus bets: payout = stake * (decimal odds - 1) if Win, else 0
-    # For normal bets: payout = stake * decimal odds if Win, else 0
-    #ws[f"J{next_row}"] = f'=IF(G{next_row}="Win", IF(H{next_row}=TRUE, {stake}*(I{next_row}-1), E{next_row}*I{next_row}), 0)'
+    # -------------------------------
+    # Payout Formula (handles Win, Push, Loss, Bonus)
+    # -------------------------------
+    #    Case 1: bonus free bet, only win profit not the stake back
+    #    G{row} = win
+    #        do {stake} * {decimal odds - 1}
+    #        if not Win, Check Push
+    #            If result = "push" return the stake from column E (this is a refund bet)
+    #        if not add zero, 
+    #    leave it blank
     if bonus:
-        # Payout = potential real-money won for bonus bets
-        ws[f"J{next_row}"] = f'=IF(G{next_row}="Win",{stake}*(I{next_row}-1),0)'
+        # Bonus bet: payout = profit if Win, refund if Push, 0 if Loss
+        ws[f"J{next_row}"] = f'=IF(G{next_row}="Win",{stake}*(I{next_row}-1),IF(G{next_row}="Push",E{next_row},0))'
     else:
-        # Payout = stake * decimal odds for real-money bets
-        ws[f"J{next_row}"] = f'=IF(G{next_row}="Win",E{next_row}*I{next_row},0)'
+        # Normal bet: payout = stake*odds if Win, refund if Push, 0 if Loss
+        ws[f"J{next_row}"] = f'=IF(G{next_row}="Win",E{next_row}*I{next_row},IF(G{next_row}="Push",E{next_row},0))'
 
     # Net PnL
-    ws[f"K{next_row}"] = f'=J{next_row}-E{next_row}'
+    ws[f"K{next_row}"] = f'=IF(G{next_row}="", "", J{next_row}-E{next_row})'
 
     # Cumulative PnL
-    ws[f"L{next_row}"] = f'=SUM(K$2:K{next_row})'
+    ws[f"L{next_row}"] = f'=IF(K{next_row}="", "", SUM(K$2:K{next_row}))'
 
     # Conditional formatting for Net PnL
     green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
@@ -67,81 +84,121 @@ def log_bet(date, sportsbook, bet_type, selection, odds, stake=0, result="", bon
     ws.conditional_formatting.add(f"K2:K{ws.max_row}",
                                   CellIsRule(operator='lessThan', formula=['0'], fill=red_fill))
 
+    # -------------------------------
+    # Dashboard - update Pending Bets count
+    # -------------------------------
+    if "Dashboard" not in wb.sheetnames:
+        ws_dash = wb.create_sheet("Dashboard")
+        ws_dash["A1"], ws_dash["B1"] = "Metric", "Value"
+    else:
+        ws_dash = wb["Dashboard"]
+
+    # Total Pending Bets = blank results
+    ws_dash["A2"], ws_dash["B2"] = "Pending Bets", f'=COUNTIF(\'Bet Log\'!G2:G{ws.max_row},"")'
+
     wb.save(FILE_PATH)
     print(f"✅ Logged bet in row {next_row}: {bet_type} - {selection} ({sportsbook})")
 
 # -------------------------------
-# Bets
+# Interactive Mode
 # -------------------------------
+if __name__ == "__main__":
+    print("📊 Bet Logger - Enter your bets (type 'done' at sportsbook to stop)\n")
 
-# 1. Fanatics $10 moneyline loss
-log_bet(
-    date="9/5/25",
-    sportsbook="Fanatics",
-    bet_type="Moneyline",
-    selection="Kansas City Chiefs ML vs LA Chargers",
-    odds=-170,
-    stake=10,
-    result="Loss",
-    bonus=False
-)
+    while True:
+        sportsbook = input("Sportsbook (or 'done' to quit): ").strip()
+        if sportsbook.lower() == "done":
+            break
 
-# 2. Hard Rock $5 ML win
-log_bet(
-    date="9/10/25",
-    sportsbook="Hard Rock",
-    bet_type="Moneyline",
-    selection="Reds vs Padraes",
-    odds=-950,
-    stake=5,
-    result="Win",
-    bonus=False
-)
+        # Default date = today
+        date = input(f"Date (MM/DD/YY, default today {datetime.today().strftime('%m/%d/%y')}): ").strip()
+        if date == "":
+            date = datetime.today().strftime("%m/%d/%y")
 
-# 3. Hard Rock $80 EVEN loss (+125)
-log_bet(
-    date="9/11/25",
-    sportsbook="Hard Rock",
-    bet_type="Total Points Odd/Even",
-    selection="Washington Commanders vs Green Bay Packers - Even",
-    odds=125,
-    stake=80,
-    result="Loss",
-    bonus=False
-)
+        bet_type = input("Bet Type: ").strip()
+        selection = input("Selection: ").strip()
+        odds = int(input("Odds (e.g., -110, +125): ").strip())
+        stake = float(input("Stake ($): ").strip())
+        result = input("Result (Win/Loss/Push/blank): ").strip()
+        bonus = input("Bonus bet? (y/n): ").strip().lower() == "y"
 
-# 4. Fanatics $100 bonus bet on Total Points ODD (-125) -> won $80
-log_bet(
-    date="9/11/25",
-    sportsbook="Fanatics",
-    bet_type="Total Points Odd/Even",
-    selection="Washington Commanders vs Green Bay Packers - Odd",
-    odds=-125,
-    stake=80,  # real money won from bonus
-    result="Win",
-    bonus=True
-)
+        log_bet(date, sportsbook, bet_type, selection, odds, stake, result, bonus)
 
-# 5. Hard Rock Bets $25 bonus bet on 4-leg parlay (+364) -> potential win of 90.9
-log_bet(
-    date="9/12/25",
-    sportsbook="Hard Rock",
-    bet_type="4-leg parlay, Bills, Ravens, Bangels, Chiefs = win",
-    selection="Bills, Ravens, Bangels, Chiefs = win",
-    odds=+364,
-    stake=25,  # real money won from bonus
-    result="",
-    bonus=True
-)
+    print("✅ All bets logged successfully!")
 
-# 6. Hard Rock Bets $25 bonus bet on 4-leg parlay (+364) -> potential win of 90.9
-log_bet(
-    date="9/12/25",
-    sportsbook="Hard Rock",
-    bet_type="Point-Spread",
-    selection="Falcons -5.5",
-    odds=+375,
-    stake=25,  # real money won from bonus
-    result="",
-    bonus=True
-)
+# # -------------------------------
+# # Bets
+# # -------------------------------
+
+# # 1. Fanatics $10 moneyline loss gave $100 bonus bets
+# log_bet(
+#     date="9/5/25",
+#     sportsbook="Fanatics",
+#     bet_type="Moneyline",
+#     selection="Kansas City Chiefs ML vs LA Chargers",
+#     odds=-170,
+#     stake=10,
+#     result="Loss",
+#     bonus=True
+# )
+
+
+# # 3. Hard Rock $80 EVEN loss (+125)
+# log_bet(
+#     date="9/11/25",
+#     sportsbook="Hard Rock",
+#     bet_type="Total Points Odd/Even",
+#     selection="Washington Commanders vs Green Bay Packers - Even",
+#     odds=125,
+#     stake=80,
+#     result="Loss",
+#     bonus=False
+# )
+
+# # 4. Fanatics $100 bonus bet on Total Points ODD (-125) -> won $80
+# log_bet(
+#     date="9/11/25",
+#     sportsbook="Fanatics",
+#     bet_type="Total Points Odd/Even",
+#     selection="Washington Commanders vs Green Bay Packers - Odd",
+#     odds=-125,
+#     stake=100,  # real money won from bonus
+#     result="Win",
+#     bonus=True
+# )
+
+# # 5. Hard Rock Bets $25 bonus bet on 4-leg parlay (+364) -> potential win of 91
+# log_bet(
+#     date="9/12/25",
+#     sportsbook="Hard Rock",
+#     bet_type="4-leg parlay, Bills, Ravens, Bangels, Chiefs = win",
+#     selection="Bills, Ravens, Bangels, Chiefs = win",
+#     odds=+364,
+#     stake=25,  # real money won from bonus
+#     result="",
+#     bonus=True
+# )
+
+# # 6. Hard Rock Bets $25 bonus bet on Atlanta spread of -5.54-leg parlay (+364) -> potential win of 93.7
+# log_bet(
+#     date="9/12/25",
+#     sportsbook="Hard Rock",
+#     bet_type="Point-Spread",
+#     selection="Falcons -5.5",
+#     odds=+375,
+#     stake=25,  # real money won from bonus
+#     result="",
+#     bonus=True
+# )
+
+# #7 Hard Rock Bets $25 bonus bet on Jahmyr Gibbs to have 5+ Q1 Recieving Yards (+125) -> win of 31.25
+# log_bet(
+#     date="9/13/25",
+#     sportsbook="Hard Rock",
+#     bet_type="To have 5+ Q1 Recieving Yards",
+#     selection="Jahmyr Gibbs",
+#     odds=+125,
+#     stake=25,  # real money won from bonus
+#     result="",
+#     bonus=True
+# )

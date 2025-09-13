@@ -6,6 +6,7 @@ from openpyxl.formatting.rule import CellIsRule
 from datetime import datetime
 from openpyxl.chart.series import Series
 from openpyxl.chart.marker import DataPoint
+
 FILE_PATH = "Bet_Tracker.xlsx"
 
 # -------------------------------
@@ -160,10 +161,6 @@ bar.add_data(net_pnl, titles_from_data=False)
 bar.set_categories(sportsbooks)
 bar.height, bar.width = 10, 20
 ws_dash.add_chart(bar, "L8")
-# -------------------------------
-# -------------------------------
-# -------------------------------
-
 
 # -------------------------------
 # 6. Save workbook

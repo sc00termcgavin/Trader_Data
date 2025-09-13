@@ -5,14 +5,8 @@ This is a project that provides a python-based betting tracker and dashboard for
 1. `dashboard.py`
    1. Main dashboard generator: reads Bet Log Excel, writes formulas, creates cumulative PnL and charts.
 
-2. `add_bet_to_excel`
-   1. Helper function to append new bets to Excel, with bonus bet logic and decimal odds calculation.
-
-3. `log_new_bets.py`
-   1. Example script showing how to call add_bet_to_excel to add bets.
-
-- Excel formulas automatically recalc Payout, Net PnL, and Cumulative PnL.
-- Charts in the Dashboard sheet auto-update when you modify results.
+2. `log_new_bets`
+   1. Helper function to append new bets (bonus/cash, decimal odds, formulas auto-filled).
 
 ---
 
@@ -41,10 +35,6 @@ python dashboard.py
 
 ## 3. Logging New bets
 
-The `add_bet_to_excel.py` script appends new bets to the Excel Bet Log without manually Editing Excel
-
-- Notes:
-  - bonus=True → stake treated as $0
-  - bonus=False → stake is your actual cash amount
-  - After entering "Win" or "Loss" in Excel, PnL and dashboard charts update automatically.
-
+```bash
+python log_new_bets.py
+```

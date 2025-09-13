@@ -1,127 +1,161 @@
-import pandas as pd
 import openpyxl
 from openpyxl.chart import LineChart, BarChart, Reference
 
-# -------------------------------
-# 1. Utility function: American to Decimal Odds
-# -------------------------------
-"""Converts American odds to decimal odds."""
-def american_to_decimal(odds):
-    if pd.isna(odds):
-        return 0
-    return 1 + (odds / 100 if odds > 0 else 100 / abs(odds))
+FILE_PATH = "Bet_Tracker.xlsx"
 
 # -------------------------------
-# 2. Excel file path
-# -------------------------------
-file_path = "Bet_Tracker.xlsx"
-
-# -------------------------------
-# 3. Create or load Bet Log
+# 1. Create workbook if not exists
 # -------------------------------
 try:
-    bet_log_df = pd.read_excel(file_path, sheet_name="Bet Log")
+    wb = openpyxl.load_workbook(FILE_PATH)
+    ws_log = wb["Bet Log"]
 except FileNotFoundError:
-    columns = ["Date", "Sportsbook", "Bet Type", "Selection", "Stake ($)", "Odds", "Result", "Decimal Odds"]
-    bet_log_df = pd.DataFrame(columns=columns)
-    bet_log_df.to_excel(file_path, sheet_name="Bet Log", index=False)
+    wb = openpyxl.Workbook()
+    ws_log = wb.active
+    ws_log.title = "Bet Log"
+    headers = [
+        "Date", "Sportsbook", "Bet Type", "Selection",
+        "Stake ($)", "Odds", "Result", "Bonus",
+        "Decimal Odds", "Payout ($)", "Net PnL ($)", "Cumulative PnL ($)"
+    ]
+    ws_log.append(headers)
+    wb.save(FILE_PATH)
 
 # -------------------------------
-# 4. Parse Date column (short format like 9/11/25)
+# 2. Write formulas for existing rows
 # -------------------------------
-bet_log_df['Date'] = pd.to_datetime(bet_log_df['Date'], errors='coerce').dt.date
+for row in range(2, ws_log.max_row + 1):
+    stake = f"E{row}"
+    odds = f"F{row}"
+    result = f"G{row}"
+    bonus = f"H{row}"
+    dec_odds = f"I{row}"
 
-# -------------------------------
-# 5. Convert American Odds to Decimal Odds
-# -------------------------------
-bet_log_df["Decimal Odds"] = bet_log_df["Odds"].apply(american_to_decimal)
-
-
-# -------------------------------
-# 6. Write to Excel and insert Payout & Net PnL formulas
-# -------------------------------
-with pd.ExcelWriter(file_path, engine='xlsxwriter') as writer:
-    bet_log_df.to_excel(writer, sheet_name="Bet Log", index=False)
-    workbook = writer.book
-    worksheet = writer.sheets['Bet Log']
-
-    # Format Date column
-    date_format = workbook.add_format({'num_format': 'mm/dd/yy'})
-    worksheet.set_column('A:A', 12, date_format)
-
-    # Insert formulas for Payout ($) and Net PnL ($)
-    worksheet.write('I1', 'Payout ($)')
-    worksheet.write('J1', 'Net PnL ($)')
-    for row in range(2, len(bet_log_df) + 2):
-        worksheet.write_formula(f'I{row}', f'=IF(G{row}="Win", F{row}*H{row}, 0)')
-        worksheet.write_formula(f'J{row}', f'=I{row}-F{row}')
-
+    # Decimal Odds
+    ws_log[dec_odds] = f'=IF(ISNUMBER({odds}),IF({odds}>0,1+{odds}/100,1+100/ABS({odds})),"")'
+    # Payout
+    ws_log[f"J{row}"] = f'=IF({result}="Win",IF({bonus}=TRUE,{stake}*({dec_odds}-1),{stake}*{dec_odds}),0)'
+    # Net PnL
+    ws_log[f"K{row}"] = f'=J{row}-{stake}'
+    # Cumulative PnL
+    ws_log[f"L{row}"] = f'=SUM(K$2:K{row})'
 
 # -------------------------------
-# 7. Load workbook for dashboard
+# 3. Create Dashboard Sheet
 # -------------------------------
-wb = openpyxl.load_workbook(file_path)
-ws_log = wb["Bet Log"]
-
-# Remove old Dashboard
 if "Dashboard" in wb.sheetnames:
     del wb["Dashboard"]
 ws_dash = wb.create_sheet("Dashboard")
 
-# -------------------------------
-# 8. KPI Section
-# -------------------------------
-ws_dash["A1"] = "KPI"
-ws_dash["B1"] = "Value"
-ws_dash["A2"] = "Total PnL ($)"
-ws_dash["B2"] = "=SUM('Bet Log'!J2:J1000)"
-ws_dash["A3"] = "Total Stake ($)"
-ws_dash["B3"] = "=SUM('Bet Log'!E2:E1000)"
-ws_dash["A4"] = "Win %"
-ws_dash["B4"] = '=COUNTIF(\'Bet Log\'!G2:G1000,"Win")/COUNTA(\'Bet Log\'!G2:G1000)'
-ws_dash["A5"] = "ROI (%)"
-ws_dash["B5"] = "=B2/B3"
+# KPI Section
+ws_dash["A1"], ws_dash["B1"] = "KPI", "Value"
+ws_dash["A2"], ws_dash["B2"] = "Total PnL ($)", "=SUM('Bet Log'!K2:K{})".format(ws_log.max_row)
+ws_dash["A3"], ws_dash["B3"] = "Total Stake ($)", "=SUM('Bet Log'!E2:E{})".format(ws_log.max_row)
+ws_dash["A4"], ws_dash["B4"] = "Win %", '=COUNTIF(\'Bet Log\'!G2:G{},"Win")/COUNTA(\'Bet Log\'!G2:G{})'.format(ws_log.max_row, ws_log.max_row)
+ws_dash["A5"], ws_dash["B5"] = "ROI (%)", "=B2/B3"
 
 # -------------------------------
-# 9. Cumulative PnL Column
+# 4. Charts
 # -------------------------------
-ws_log.cell(row=1, column=11).value = "Cumulative PnL ($)"  # Column K
-for i in range(2, ws_log.max_row + 1):
-    ws_log.cell(row=i, column=11).value = f"=SUM($J$2:J{i})"
-
-# -------------------------------
-# 10. Charts
-# -------------------------------
-# Line Chart: Cumulative PnL Over Time
+# Line Chart: Cumulative Net PnL
 line = LineChart()
 line.title = "Cumulative Net PnL Over Time"
-line.x_axis.title = "Date"
-line.y_axis.title = "Cumulative Net PnL ($)"
-
+line.x_axis.title, line.y_axis.title = "Date", "Cumulative Net PnL ($)"
 dates = Reference(ws_log, min_col=1, min_row=2, max_row=ws_log.max_row)
-cumulative = Reference(ws_log, min_col=11, min_row=1, max_row=ws_log.max_row)
-line.add_data(cumulative, titles_from_data=True)
+cumulative = Reference(ws_log, min_col=12, min_row=2, max_row=ws_log.max_row)
+line.add_data(cumulative, titles_from_data=False)
 line.set_categories(dates)
-line.height = 10
-line.width = 20
+line.height, line.width = 10, 20
 ws_dash.add_chart(line, "A8")
 
 # Bar Chart: Net PnL by Sportsbook
 bar = BarChart()
 bar.title = "Net PnL by Sportsbook"
-bar.x_axis.title = "Sportsbook"
-bar.y_axis.title = "Net PnL ($)"
-
+bar.x_axis.title, bar.y_axis.title = "Sportsbook", "Net PnL ($)"
 sportsbooks = Reference(ws_log, min_col=2, min_row=2, max_row=ws_log.max_row)
-net_pnl = Reference(ws_log, min_col=10, min_row=1, max_row=ws_log.max_row)  # Column J
-bar.add_data(net_pnl, titles_from_data=True)
+net_pnl = Reference(ws_log, min_col=11, min_row=2, max_row=ws_log.max_row)
+bar.add_data(net_pnl, titles_from_data=False)
 bar.set_categories(sportsbooks)
-bar.height = 10
-bar.width = 20
+bar.height, bar.width = 10, 20
 ws_dash.add_chart(bar, "L8")
 
 # -------------------------------
-# 11. Save workbook
+# 5. Save workbook
 # -------------------------------
-wb.save(file_path)
-print(f"Bet Tracker Dashboard ready: {file_path}")
+wb.save(FILE_PATH)
+print(f"✅ Bet Tracker Dashboard ready: {FILE_PATH}")
+
+# ---------------------------------------
+# import openpyxl
+# from openpyxl.chart import LineChart, BarChart, Reference
+
+# file_path = "Bet_Tracker.xlsx"
+
+# # -------------------------------
+# # 1. Create Excel with headers if not exist
+# # -------------------------------
+# try:
+#     wb = openpyxl.load_workbook(file_path)
+#     ws_log = wb["Bet Log"]
+# except FileNotFoundError:
+#     wb = openpyxl.Workbook()
+#     ws_log = wb.active
+#     ws_log.title = "Bet Log"
+#     headers = [
+#         "Date", "Sportsbook", "Bet Type", "Selection",
+#         "Stake ($)", "Odds", "Result", "Bonus",
+#         "Decimal Odds", "Payout ($)", "Net PnL ($)", "Cumulative PnL ($)"
+#     ]
+#     ws_log.append(headers)
+#     wb.save(file_path)
+
+# # -------------------------------
+# # 2. Add Dashboard sheet
+# # -------------------------------
+# if "Dashboard" in wb.sheetnames:
+#     del wb["Dashboard"]
+# ws_dash = wb.create_sheet("Dashboard")
+
+# # KPI Section
+# ws_dash["A1"] = "KPI"
+# ws_dash["B1"] = "Value"
+# ws_dash["A2"] = "Total PnL ($)"
+# ws_dash["B2"] = "=SUM('Bet Log'!K2:K1000)"
+# ws_dash["A3"] = "Total Stake ($)"
+# ws_dash["B3"] = "=SUM('Bet Log'!E2:E1000)"
+# ws_dash["A4"] = "Win %"
+# ws_dash["B4"] = '=COUNTIF(\'Bet Log\'!G2:G1000,"Win")/COUNTA(\'Bet Log\'!G2:G1000)'
+# ws_dash["A5"] = "ROI (%)"
+# ws_dash["B5"] = "=B2/B3"
+
+# # -------------------------------
+# # 3. Charts
+# # -------------------------------
+# # Line Chart: Cumulative PnL
+# line = LineChart()
+# line.title = "Cumulative Net PnL Over Time"
+# line.x_axis.title = "Date"
+# line.y_axis.title = "Cumulative Net PnL ($)"
+# dates = Reference(ws_log, min_col=1, min_row=2, max_row=ws_log.max_row)
+# cumulative = Reference(ws_log, min_col=12, min_row=2, max_row=ws_log.max_row)
+# line.add_data(cumulative, titles_from_data=True)
+# line.set_categories(dates)
+# line.height = 10
+# line.width = 20
+# ws_dash.add_chart(line, "A8")
+
+# # Bar Chart: Net PnL by Sportsbook
+# bar = BarChart()
+# bar.title = "Net PnL by Sportsbook"
+# bar.x_axis.title = "Sportsbook"
+# bar.y_axis.title = "Net PnL ($)"
+# sportsbooks = Reference(ws_log, min_col=2, min_row=2, max_row=ws_log.max_row)
+# net_pnl = Reference(ws_log, min_col=11, min_row=2, max_row=ws_log.max_row)  # Net PnL column
+# bar.add_data(net_pnl, titles_from_data=True)
+# bar.set_categories(sportsbooks)
+# bar.height = 10
+# bar.width = 20
+# ws_dash.add_chart(bar, "L8")
+
+# wb.save(file_path)
+# print(f"✅ Bet Tracker Dashboard ready: {file_path}")

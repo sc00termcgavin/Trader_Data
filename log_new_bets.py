@@ -62,10 +62,100 @@ def ensure_bet_log_headers(ws):
 # -------------------------------
 # Log a single bet
 # -------------------------------
+# def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bonus=False):
+#     """
+#     Append a single bet to Bet Tracker.
+#     Bonus bets: stake is 0, payout = real money won.
+#     """
+#     # Load workbook or create if not exist
+#     try:
+#         wb = openpyxl.load_workbook(FILE_PATH)
+#         ws = wb["Bet Log"]
+#     except FileNotFoundError:
+#         wb = openpyxl.Workbook()
+#         ws = wb.active
+#         ws.title = "Bet Log"
+#         ws.append(HEADERS)
+#     else:
+#         ensure_bet_log_headers(ws)
+
+#     next_row = ws.max_row + 1
+
+#     # Actual stake for bonus bets
+#     actual_stake = 0 if bonus else stake
+#     dec_odds = american_to_decimal(odds)
+
+#     # Append data
+#     ws[f"A{next_row}"] = date
+#     ws[f"B{next_row}"] = sportsbook
+#     ws[f"C{next_row}"] = league
+#     ws[f"D{next_row}"] = market
+#     ws[f"E{next_row}"] = pick
+#     ws[f"F{next_row}"] = actual_stake
+#     ws[f"G{next_row}"] = odds
+#     ws[f"H{next_row}"] = result
+#     ws[f"I{next_row}"] = bonus
+#     ws[f"J{next_row}"] = dec_odds
+
+#     # -------------------------------
+#     # Payout Formula (handles Win, Push, Loss, Bonus)
+#     # -------------------------------
+#     if bonus:
+#         ws[f"K{next_row}"] = f'=IF(H{next_row}="Win",{stake}*(J{next_row}-1),IF(H{next_row}="Push",F{next_row},0))'
+#     else:
+#         ws[f"K{next_row}"] = f'=IF(H{next_row}="Win",F{next_row}*J{next_row},IF(H{next_row}="Push",F{next_row},0))'
+
+#     # Net PnL
+#     ws[f"L{next_row}"] = f'=IF(H{next_row}="", "", K{next_row}-F{next_row})'
+
+#     # Cumulative PnL
+#     ws[f"M{next_row}"] = f'=IF(L{next_row}="", "", SUM(L$2:L{next_row}))'
+
+#     # Conditional formatting for Net PnL
+#     green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+#     red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
+#     ws.conditional_formatting.add(f"L2:L{ws.max_row}",
+#                                   CellIsRule(operator='greaterThan', formula=['0'], fill=green_fill))
+#     ws.conditional_formatting.add(f"L2:L{ws.max_row}",
+#                                   CellIsRule(operator='lessThan', formula=['0'], fill=red_fill))
+
+#     # -------------------------------
+#     # Dashboard - update KPIs
+#     # -------------------------------
+#     if "Dashboard" in wb.sheetnames:
+#         ws_dash = wb["Dashboard"]
+#         # Clear old values (optional)
+#         for row in ws_dash.iter_rows(min_row=2, max_col=2, max_row=20):
+#             for cell in row:
+#                 cell.value = None
+#     else:
+#         ws_dash = wb.create_sheet("Dashboard")
+#         ws_dash["A1"], ws_dash["B1"] = "Metric", "Value"
+
+#     # Metrics
+#     ws_dash["A2"], ws_dash["B2"] = "Total PnL ($)", f"=SUM('Bet Log'!L2:L{ws.max_row})"
+#     ws_dash["A3"], ws_dash["B3"] = "Total Stake ($)", f"=SUM('Bet Log'!F2:F{ws.max_row})"
+#     ws_dash["A4"], ws_dash["B4"] = "Wins", f'=COUNTIF(\'Bet Log\'!H2:H{ws.max_row},"Win")'
+#     ws_dash["A5"], ws_dash["B5"] = "Total Bets", f'=COUNTA(\'Bet Log\'!H2:H{ws.max_row})'
+#     ws_dash["A6"], ws_dash["B6"] = "Pending Bets", f'=COUNTIF(\'Bet Log\'!H2:H{ws.max_row},"")'
+#     ws_dash["A7"], ws_dash["B7"] = "Win %", f"=IF(B5=0,0,B4/B5)"
+#     ws_dash["A8"], ws_dash["B8"] = "ROI (%)", f"=IF(B3=0,0,B2/B3)"
+
+#     wb.save(FILE_PATH)
+#     wb.close()
+
+#     # Refresh cached formula values so data_only reads pick up results
+#     try:
+#         wb_cached = openpyxl.load_workbook(FILE_PATH, data_only=True, read_only=True)
+#         wb_cached.close()
+#     except Exception:
+#         pass
+#     print(f"✅ Logged bet in row {next_row}: {league} {market} - {pick} ({sportsbook})")
+#-------------------------------
 def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bonus=False):
     """
     Append a single bet to Bet Tracker.
-    Bonus bets: stake is 0, payout = real money won.
+    Payout, Net PnL, and Cumulative PnL are calculated in Python and stored as numeric values.
     """
     # Load workbook or create if not exist
     try:
@@ -85,7 +175,39 @@ def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bo
     actual_stake = 0 if bonus else stake
     dec_odds = american_to_decimal(odds)
 
-    # Append data
+    # -------------------------------
+    # Compute values directly in Python
+    # -------------------------------
+    payout = None
+    net_pnl = None
+    cumulative_pnl = None
+
+    if result:
+        if bonus:
+            if result == "Win":
+                payout = stake * (dec_odds - 1)
+            elif result == "Push":
+                payout = actual_stake
+            else:  # Loss
+                payout = 0
+        else:
+            if result == "Win":
+                payout = actual_stake * dec_odds
+            elif result == "Push":
+                payout = actual_stake
+            else:  # Loss
+                payout = 0
+
+        net_pnl = payout - actual_stake
+        # Previous cumulative PnL + current net
+        if next_row > 2 and ws[f"M{next_row-1}"].value not in (None, ""):
+            cumulative_pnl = ws[f"M{next_row-1}"].value + net_pnl
+        else:
+            cumulative_pnl = net_pnl
+
+    # -------------------------------
+    # Append data into worksheet
+    # -------------------------------
     ws[f"A{next_row}"] = date
     ws[f"B{next_row}"] = sportsbook
     ws[f"C{next_row}"] = league
@@ -96,20 +218,9 @@ def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bo
     ws[f"H{next_row}"] = result
     ws[f"I{next_row}"] = bonus
     ws[f"J{next_row}"] = dec_odds
-
-    # -------------------------------
-    # Payout Formula (handles Win, Push, Loss, Bonus)
-    # -------------------------------
-    if bonus:
-        ws[f"K{next_row}"] = f'=IF(H{next_row}="Win",{stake}*(J{next_row}-1),IF(H{next_row}="Push",F{next_row},0))'
-    else:
-        ws[f"K{next_row}"] = f'=IF(H{next_row}="Win",F{next_row}*J{next_row},IF(H{next_row}="Push",F{next_row},0))'
-
-    # Net PnL
-    ws[f"L{next_row}"] = f'=IF(H{next_row}="", "", K{next_row}-F{next_row})'
-
-    # Cumulative PnL
-    ws[f"M{next_row}"] = f'=IF(L{next_row}="", "", SUM(L$2:L{next_row}))'
+    ws[f"K{next_row}"] = payout
+    ws[f"L{next_row}"] = net_pnl
+    ws[f"M{next_row}"] = cumulative_pnl
 
     # Conditional formatting for Net PnL
     green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
@@ -124,7 +235,6 @@ def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bo
     # -------------------------------
     if "Dashboard" in wb.sheetnames:
         ws_dash = wb["Dashboard"]
-        # Clear old values (optional)
         for row in ws_dash.iter_rows(min_row=2, max_col=2, max_row=20):
             for cell in row:
                 cell.value = None
@@ -132,7 +242,6 @@ def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bo
         ws_dash = wb.create_sheet("Dashboard")
         ws_dash["A1"], ws_dash["B1"] = "Metric", "Value"
 
-    # Metrics
     ws_dash["A2"], ws_dash["B2"] = "Total PnL ($)", f"=SUM('Bet Log'!L2:L{ws.max_row})"
     ws_dash["A3"], ws_dash["B3"] = "Total Stake ($)", f"=SUM('Bet Log'!F2:F{ws.max_row})"
     ws_dash["A4"], ws_dash["B4"] = "Wins", f'=COUNTIF(\'Bet Log\'!H2:H{ws.max_row},"Win")'
@@ -142,6 +251,9 @@ def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bo
     ws_dash["A8"], ws_dash["B8"] = "ROI (%)", f"=IF(B3=0,0,B2/B3)"
 
     wb.save(FILE_PATH)
+    wb.close()
+    
+
     print(f"✅ Logged bet in row {next_row}: {league} {market} - {pick} ({sportsbook})")
 
 
@@ -256,4 +368,3 @@ if __name__ == "__main__":
 #     result="",
 #     bonus=True
 # )
-

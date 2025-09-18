@@ -122,34 +122,28 @@ try:
 
     def recompute_row_values(ws, row):
         """Recompute Payout (K), Net PnL (L), Cumulative (M) for a given row based on current fields."""
-        stake = _to_float(ws[f"F{row}"].value)                 # Stake ($)
-        odds  = _to_float(ws[f"G{row}"].value)
+        stake_val = ws[f"F{row}"].value
+        odds_val = ws[f"G{row}"].value
         result = (ws[f"H{row}"].value or "").strip()
-        normalized_result = result.lower() if isinstance(result, str) else ""
         bonus = bool(ws[f"I{row}"].value)
-        dec_odds = american_to_decimal_local(odds)
+
+        stake = _to_float(stake_val)
+        actual_stake = 0.0 if bonus else stake
+        dec_odds = american_to_decimal_local(odds_val)
+
         ws[f"J{row}"] = dec_odds
 
-        # payout / net
-        if normalized_result == "open":
+        if result == "Open":
             payout = None
             net = None
         elif result:
-            if bonus:
-                if result == "Win":
-                    payout = _to_float(ws[f"F{row}"].value) * (dec_odds - 1)
-                elif result == "Push":
-                    payout = 0.0  # if you prefer push on bonus returns stake, change to _to_float(ws[f"F{row}"].value)
-                else:
-                    payout = 0.0
-            else:
-                if result == "Win":
-                    payout = stake * dec_odds
-                elif result == "Push":
-                    payout = stake
-                else:
-                    payout = 0.0
-            net = payout - (0.0 if bonus else stake)
+            if result == "Win":
+                payout = actual_stake * dec_odds if not bonus else stake * (dec_odds - 1)
+            elif result == "Push":
+                payout = actual_stake
+            else:  # Loss or other outcomes treated as loss
+                payout = 0.0
+            net = payout - actual_stake
         else:
             payout = None
             net = None
@@ -273,7 +267,11 @@ try:
     rows = table_data  # alias for readability
 
     total_pnl = sum(_to_number(r.get("Net PnL ($)")) for r in rows)
-    total_stake = sum(_to_number(r.get("Stake ($)")) for r in rows)
+    total_stake = sum(
+        _to_number(r.get("Stake ($)"))
+        for r in rows
+        if (r.get("Result") not in ("Open", "", None)) and not r.get("Bonus")
+    )
 
     result_vals = [(r.get("Result") or "").strip() for r in rows]
 
@@ -284,11 +282,28 @@ try:
     win_pct = (wins / total_bets) if total_bets > 0 else 0.0
     roi_pct = (total_pnl / total_stake) if total_stake > 0 else 0.0
 
-    col1, col2, col3, col4 = st.columns(4)
+    # Open Bets KPI
+    open_bets = sum(1 for v in result_vals if v == "Open")
+
+    # Sportsbook KPI breakdown
+    from collections import Counter
+    books = Counter(r.get("Sportsbook") for r in rows if r.get("Sportsbook"))
+
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1: st.metric("Total PnL ($)", f"{total_pnl:,.2f}")
     with col2: st.metric("Total Stake ($)", f"{total_stake:,.2f}")
     with col3: st.metric("Win %", f"{win_pct*100:.2f}%")
     with col4: st.metric("ROI (%)", f"{roi_pct*100:.2f}%")
+    with col5: st.metric("Open Bets", open_bets)
+
+    st.subheader("📚 Bets by Sportsbook")
+    if books:
+        cols = st.columns(len(books))
+        for i, (book, count) in enumerate(books.items()):
+            with cols[i]:
+                st.metric(book, count)
+    else:
+        st.info("No sportsbook activity yet.")
 
 except FileNotFoundError:
     st.warning("⚠️ No Bet Tracker file found yet. Log your first bet to create one.")

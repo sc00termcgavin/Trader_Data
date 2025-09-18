@@ -89,18 +89,20 @@ def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bo
     net_pnl = None
     cumulative_pnl = None
 
-    if result:
+    result_clean = (result or "").strip()
+
+    if result_clean and result_clean != "Open":
         if bonus:
-            if result == "Win":
+            if result_clean == "Win":
                 payout = stake * (dec_odds - 1)
-            elif result == "Push":
+            elif result_clean == "Push":
                 payout = actual_stake
             else:  # Loss
                 payout = 0
         else:
-            if result == "Win":
+            if result_clean == "Win":
                 payout = actual_stake * dec_odds
-            elif result == "Push":
+            elif result_clean == "Push":
                 payout = actual_stake
             else:  # Loss
                 payout = 0
@@ -122,7 +124,7 @@ def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bo
     ws[f"E{next_row}"] = pick
     ws[f"F{next_row}"] = actual_stake
     ws[f"G{next_row}"] = odds
-    ws[f"H{next_row}"] = result
+    ws[f"H{next_row}"] = result_clean
     ws[f"I{next_row}"] = bonus
     ws[f"J{next_row}"] = dec_odds
     ws[f"K{next_row}"] = payout

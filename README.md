@@ -1,54 +1,73 @@
-# Sports Bet Tracking
+# 📊 Sports Bet Tracker
 
-This is a project that provides a python-based betting tracker and dashboard for personal use. It allows you to log bets, track Net PnL, visualize cumulative PnL over time, and analyze performance by sportsbook.
-
-1. `dashboard.py`
-   1. Main dashboard generator: reads Bet Log Excel, writes formulas, creates cumulative PnL and charts.
-
-2. `log_new_bets`
-   1. Helper function to append new bets (bonus/cash, decimal odds, formulas auto-filled).
+A Python-based betting tracker and dashboard that logs bets, tracks Net PnL, and visualizes your performance over time.  
+You can use it in two ways:
+- **Command-line scripts** (`log_new_bets.py` & `dashboard.py`)  
+- **Streamlit web app** (`app.py`) for a self-hosted dashboard with an interactive form
 
 ---
 
-## 1. Dependencies
+## ✨ Features
 
-Install the required Python packages using pip:
+- Log bets with metadata: **Date, Sportsbook, League, Market, Pick, Odds, Stake, Result, Bonus**
+- Automatically calculates:
+  - **Payout ($)**
+  - **Net PnL ($)**
+  - **Cumulative PnL ($)**
+- Track performance with KPIs:
+  - **Total PnL ($)**
+  - **Total Stake ($)**
+  - **Wins / Total Bets / Pending Bets**
+  - **Win %**
+  - **ROI (%)**
+- Excel Dashboard (`dashboard.py`) generates:
+  - Line chart: Cumulative Net PnL over time
+  - Bar chart: Net PnL by Sportsbook
+- Web App (`app.py`) built with Streamlit:
+  - Sidebar form to log bets (NFL, NBA, UFC, etc.)
+  - Real-time table of bets
+  - KPIs updated instantly
+
+---
+
+## ⚙️ Installation
+
+Clone the repo and install dependencies:
 
 ```bash
+git clone <your-repo-url>
+cd Trader_Data
+python -m venv .venv
+source .venv/bin/activate   # On Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## 2. Running the Dashboard
+---
 
-The `dashboard.py` script generates your Excel dashboard with:
-
-- Notes:
-  - Cumulative Net PnL over time  
-  - Net PnL by sportsbook  
-  - KPIs: Total PnL, Total Stake, Win %, ROI  
-
-To run it, open a terminal in your project folder and execute:
-
-```bash
-python dashboard.py
-```
-
-## 3. Logging New bets
-
+1. Log Bets via CLI
 ```bash
 python log_new_bets.py
 ```
+> Interactive prompts let you enter bets one at a time.
+
+2. Generate Excel Dashboard
+```bash
+python dashboard.py
+```
+> Creates/updates Bet_Tracker.xlsx with KPIs and charts.
+
+3. Run the Web App
+```bash
+streamlit run app.py
+```
+> Open http://localhost:8501 to access:
+> * A form to log new bets
+> * A table of past bets
+> * KPIs: Total PnL, Total Stake, Win %, ROI %
 
 
-what was added:
+---
 
-	1.	Handles Win, Loss, Push, and pending bets correctly
-	2.	Losses no longer give #VALUE! errors
-	3.	Net PnL and Cumulative PnL auto-calculate
-	4.	Dashboard automatically shows Pending Bets count
-	5.	Default date = today, can override manually
-	6.	Interactive input allows multiple bets in one session
+## ToDO
 
-⸻
-
-If you want, I can also add auto-updating the Dashboard with Total Bets, Wins, ROI, etc., so it’s a full summary like your old version.
+- [ ]Deployable Docker image for easy hosting

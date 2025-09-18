@@ -34,6 +34,7 @@ with st.sidebar.form("log_bet_form"):
     pick = st.text_input("Pick / Wager")
     odds = st.number_input("Odds (American)", step=1, value=-110)
     stake = st.number_input("Stake ($)", step=1.0, value=10.0)
+    profit_boost = st.number_input("Profit Boost (%)", min_value=0, max_value=100, value=0, step=5)
     result = st.selectbox("Result", ["Open", "Win", "Loss", "Push"])
     bonus = st.checkbox("Bonus Bet?")
     date = st.date_input("Date", datetime.today())
@@ -60,7 +61,8 @@ with st.sidebar.form("log_bet_form"):
                 odds,
                 stake,
                 result,
-                bonus
+                bonus,
+                profit_boost
             )
             st.success(f"✅ Logged bet: {league} - {market} - {pick} ({sportsbook})")
 
@@ -124,33 +126,68 @@ try:
         """Recompute Payout (K), Net PnL (L), Cumulative (M) for a given row based on current fields."""
         stake_val = ws[f"F{row}"].value
         odds_val = ws[f"G{row}"].value
-        result = (ws[f"H{row}"].value or "").strip()
+        result_raw = (ws[f"H{row}"].value or "").strip()
+        result = result_raw if isinstance(result_raw, str) else ""
         bonus = bool(ws[f"I{row}"].value)
+
+        # Locate optional Profit Boost (%) column
+        profit_boost = 0.0
+        header_values = [cell.value for cell in ws[1]]
+        try:
+            boost_col = header_values.index("Profit Boost (%)") + 1
+            profit_boost = _to_float(ws.cell(row=row, column=boost_col).value, 0.0)
+        except ValueError:
+            profit_boost = 0.0
 
         stake = _to_float(stake_val)
         actual_stake = 0.0 if bonus else stake
-        dec_odds = american_to_decimal_local(odds_val)
 
-        ws[f"J{row}"] = dec_odds
+        dec_odds_original = american_to_decimal_local(odds_val)
+        base_profit = (dec_odds_original - 1) * stake
+        if profit_boost and profit_boost > 0:
+            boosted_profit = base_profit * (1 + profit_boost / 100)
+            dec_odds_effective = (
+                1 + ((dec_odds_original - 1) * (1 + profit_boost / 100))
+                if stake not in (0, None)
+                else dec_odds_original
+            )
+        else:
+            boosted_profit = base_profit
+            dec_odds_effective = dec_odds_original
 
-        if result == "Open":
-            payout = None
-            net = None
-        elif result:
-            if result == "Win":
-                payout = actual_stake * dec_odds if not bonus else stake * (dec_odds - 1)
-            elif result == "Push":
-                payout = actual_stake
-            else:  # Loss or other outcomes treated as loss
-                payout = 0.0
-            net = payout - actual_stake
+        ws[f"J{row}"] = dec_odds_effective
+
+        normalized_result = result.title()
+        boost_active = bool(profit_boost and profit_boost > 0)
+
+        if normalized_result == "Win":
+            if bonus:
+                payout = boosted_profit if boost_active else stake * (dec_odds_original - 1)
+            else:
+                payout = (
+                    actual_stake + boosted_profit
+                    if boost_active
+                    else actual_stake * dec_odds_original
+                )
+        elif normalized_result == "Push":
+            payout = actual_stake
+        elif normalized_result == "Loss":
+            payout = 0.0
         else:
             payout = None
-            net = None
+
+        net = payout - actual_stake if payout is not None else None
+
+        if net is not None:
+            prev_raw = ws[f"M{row-1}"].value if row > 2 else 0
+            prev_cum = _to_float(prev_raw, 0.0) if prev_raw not in (None, "") else 0.0
+            cumulative = prev_cum + net
+        else:
+            cumulative = None
 
         ws[f"K{row}"] = payout
         ws[f"L{row}"] = net
-        # cumulative will be set after we recalc down the column
+        ws[f"M{row}"] = cumulative
 
     def recompute_cumulative(ws):
         """Recompute cumulative PnL (M) from row 2..max."""
@@ -184,6 +221,7 @@ try:
                 stake_val = _to_float(current.get("Stake ($)"), 10.0)
                 result_val = (current.get("Result") or "")
                 bonus_val = bool(current.get("Bonus"))
+                profit_boost_val = _to_float(current.get("Profit Boost (%)"), 0.0)
 
                 leagues = ["NFL","NBA","MLB","NHL","EPL","UFC","Other"]
                 markets = ["Moneyline","Spread","Total","Prop","Parlay"]
@@ -201,6 +239,13 @@ try:
                     result_in = st.selectbox("Result", ["Open", "Win", "Loss", "Push"],
                                              index=["Open","Win","Loss","Push"].index(result_val) if result_val in ["Open","Win","Loss","Push"] else 0)
                     bonus_in = st.checkbox("Bonus Bet?", value=bonus_val)
+                    profit_boost_in = st.number_input(
+                        "Profit Boost (%)",
+                        min_value=0.0,
+                        max_value=100.0,
+                        value=float(profit_boost_val),
+                        step=5.0,
+                    )
 
                 if st.button("Save changes"):
                     import openpyxl
@@ -217,6 +262,13 @@ try:
                     ws[f"G{r}"] = float(odds_in)
                     ws[f"H{r}"] = result_in
                     ws[f"I{r}"] = bool(bonus_in)
+
+                    header_values = [cell.value for cell in ws[1]]
+                    try:
+                        boost_col = header_values.index("Profit Boost (%)") + 1
+                        ws.cell(row=r, column=boost_col, value=profit_boost_in)
+                    except ValueError:
+                        pass
 
                     recompute_row_values(ws, r)
                     recompute_cumulative(ws)

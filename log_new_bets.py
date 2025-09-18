@@ -19,7 +19,8 @@ HEADERS = [
     "Decimal Odds",
     "Payout ($)",
     "Net PnL ($)",
-    "Cumulative PnL ($)"
+    "Cumulative PnL ($)",
+    "Profit Boost (%)"
 ]
 
 # -------------------------------
@@ -59,7 +60,7 @@ def ensure_bet_log_headers(ws):
         ws.cell(row=1, column=idx, value=header)
 
 
-def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bonus=False):
+def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bonus=False, profit_boost=0):
     """
     Append a single bet to Bet Tracker.
     Payout, Net PnL, and Cumulative PnL are calculated in Python and stored as numeric values.
@@ -80,7 +81,19 @@ def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bo
 
     # Actual stake for bonus bets
     actual_stake = 0 if bonus else stake
-    dec_odds = american_to_decimal(odds)
+    dec_odds_original = american_to_decimal(odds)
+
+    base_profit = (dec_odds_original - 1) * stake
+    if profit_boost and profit_boost > 0:
+        boosted_profit = base_profit * (1 + profit_boost / 100)
+        dec_odds_effective = (
+            1 + ((dec_odds_original - 1) * (1 + profit_boost / 100))
+            if stake not in (0, None)
+            else dec_odds_original
+        )
+    else:
+        boosted_profit = base_profit
+        dec_odds_effective = dec_odds_original
 
     # -------------------------------
     # Compute values directly in Python
@@ -90,29 +103,35 @@ def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bo
     cumulative_pnl = None
 
     result_clean = (result or "").strip()
+    boost_active = bool(profit_boost and profit_boost > 0)
 
-    if result_clean and result_clean != "Open":
+    if result_clean == "Win":
         if bonus:
-            if result_clean == "Win":
-                payout = stake * (dec_odds - 1)
-            elif result_clean == "Push":
-                payout = actual_stake
-            else:  # Loss
-                payout = 0
+            payout = boosted_profit if boost_active else stake * (dec_odds_original - 1)
         else:
-            if result_clean == "Win":
-                payout = actual_stake * dec_odds
-            elif result_clean == "Push":
-                payout = actual_stake
-            else:  # Loss
-                payout = 0
+            payout = (
+                actual_stake + boosted_profit
+                if boost_active
+                else actual_stake * dec_odds_original
+            )
+    elif result_clean == "Push":
+        payout = actual_stake
+    elif result_clean == "Loss":
+        payout = 0
+    else:  # Open or blank
+        payout = None
 
-        net_pnl = payout - actual_stake
-        # Previous cumulative PnL + current net
-        if next_row > 2 and ws[f"M{next_row-1}"].value not in (None, ""):
-            cumulative_pnl = ws[f"M{next_row-1}"].value + net_pnl
-        else:
-            cumulative_pnl = net_pnl
+    net_pnl = payout - actual_stake if payout is not None else None
+
+    if net_pnl is not None:
+        prev_raw = ws[f"M{next_row-1}"].value if next_row > 2 else 0
+        try:
+            prev_cum = float(prev_raw)
+        except (TypeError, ValueError):
+            prev_cum = 0.0
+        cumulative_pnl = prev_cum + net_pnl
+    else:
+        cumulative_pnl = None
 
     # -------------------------------
     # Append data into worksheet
@@ -122,14 +141,20 @@ def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bo
     ws[f"C{next_row}"] = league
     ws[f"D{next_row}"] = market
     ws[f"E{next_row}"] = pick
-    ws[f"F{next_row}"] = actual_stake
+    ws[f"F{next_row}"] = stake
     ws[f"G{next_row}"] = odds
     ws[f"H{next_row}"] = result_clean
     ws[f"I{next_row}"] = bonus
-    ws[f"J{next_row}"] = dec_odds
+    ws[f"J{next_row}"] = dec_odds_effective
     ws[f"K{next_row}"] = payout
     ws[f"L{next_row}"] = net_pnl
     ws[f"M{next_row}"] = cumulative_pnl
+    header_values = [cell.value for cell in ws[1]]
+    try:
+        boost_col = header_values.index("Profit Boost (%)") + 1
+        ws.cell(row=next_row, column=boost_col, value=profit_boost)
+    except ValueError:
+        pass
 
     # Conditional formatting for Net PnL
     green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
@@ -152,7 +177,7 @@ def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bo
         ws_dash["A1"], ws_dash["B1"] = "Metric", "Value"
 
     ws_dash["A2"], ws_dash["B2"] = "Total PnL ($)", f"=SUM('Bet Log'!L2:L{ws.max_row})"
-    ws_dash["A3"], ws_dash["B3"] = "Total Stake ($)", f"=SUM('Bet Log'!F2:F{ws.max_row})"
+    ws_dash["A3"], ws_dash["B3"] = "Total Stake ($)", f"=SUMIF('Bet Log'!I2:I{ws.max_row},FALSE,'Bet Log'!F2:F{ws.max_row})"
     ws_dash["A4"], ws_dash["B4"] = "Wins", f'=COUNTIF(\'Bet Log\'!H2:H{ws.max_row},"Win")'
     ws_dash["A5"], ws_dash["B5"] = "Total Bets", f'=COUNTA(\'Bet Log\'!H2:H{ws.max_row})'
     ws_dash["A6"], ws_dash["B6"] = "Pending Bets", f'=COUNTIF(\'Bet Log\'!H2:H{ws.max_row},"")'

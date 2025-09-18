@@ -6,6 +6,22 @@ import os
 
 FILE_PATH = "Bet_Tracker.xlsx"
 
+HEADERS = [
+    "Date",
+    "Sportsbook",
+    "League",
+    "Market",
+    "Pick",
+    "Stake ($)",
+    "Odds",
+    "Result",
+    "Bonus",
+    "Decimal Odds",
+    "Payout ($)",
+    "Net PnL ($)",
+    "Cumulative PnL ($)"
+]
+
 # -------------------------------
 # Utility: Convert American odds to Decimal
 # -------------------------------
@@ -15,9 +31,38 @@ def american_to_decimal(odds):
     return 1 + (odds / 100 if odds > 0 else 100 / abs(odds))
 
 # -------------------------------
+# Header maintenance
+# -------------------------------
+def ensure_bet_log_headers(ws):
+    header_values = [cell.value for cell in ws[1]] if ws.max_row >= 1 else []
+
+    if not any(header_values):
+        ws.append(HEADERS)
+        return
+
+    rename_map = {"Bet Type": "Market", "Selection": "Pick"}
+    for idx, value in enumerate(header_values, start=1):
+        if value in rename_map:
+            ws.cell(row=1, column=idx, value=rename_map[value])
+
+    header_values = [cell.value for cell in ws[1]]
+
+    if "League" not in header_values:
+        try:
+            sportsbook_idx = header_values.index("Sportsbook") + 1
+        except ValueError:
+            sportsbook_idx = 2
+        ws.insert_cols(sportsbook_idx + 1)
+        ws.cell(row=1, column=sportsbook_idx + 1, value="League")
+
+    for idx, header in enumerate(HEADERS, start=1):
+        ws.cell(row=1, column=idx, value=header)
+
+
+# -------------------------------
 # Log a single bet
 # -------------------------------
-def log_bet(date, sportsbook, bet_type, selection, odds, stake=0, result="", bonus=False):
+def log_bet(date, sportsbook, league, market, pick, odds, stake=0, result="", bonus=False):
     """
     Append a single bet to Bet Tracker.
     Bonus bets: stake is 0, payout = real money won.
@@ -30,12 +75,9 @@ def log_bet(date, sportsbook, bet_type, selection, odds, stake=0, result="", bon
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = "Bet Log"
-        headers = [
-            "Date", "Sportsbook", "Bet Type", "Selection",
-            "Stake ($)", "Odds", "Result", "Bonus",
-            "Decimal Odds", "Payout ($)", "Net PnL ($)", "Cumulative PnL ($)"
-        ]
-        ws.append(headers)
+        ws.append(HEADERS)
+    else:
+        ensure_bet_log_headers(ws)
 
     next_row = ws.max_row + 1
 
@@ -46,34 +88,35 @@ def log_bet(date, sportsbook, bet_type, selection, odds, stake=0, result="", bon
     # Append data
     ws[f"A{next_row}"] = date
     ws[f"B{next_row}"] = sportsbook
-    ws[f"C{next_row}"] = bet_type
-    ws[f"D{next_row}"] = selection
-    ws[f"E{next_row}"] = actual_stake
-    ws[f"F{next_row}"] = odds
-    ws[f"G{next_row}"] = result
-    ws[f"H{next_row}"] = bonus
-    ws[f"I{next_row}"] = dec_odds
+    ws[f"C{next_row}"] = league
+    ws[f"D{next_row}"] = market
+    ws[f"E{next_row}"] = pick
+    ws[f"F{next_row}"] = actual_stake
+    ws[f"G{next_row}"] = odds
+    ws[f"H{next_row}"] = result
+    ws[f"I{next_row}"] = bonus
+    ws[f"J{next_row}"] = dec_odds
 
     # -------------------------------
     # Payout Formula (handles Win, Push, Loss, Bonus)
     # -------------------------------
     if bonus:
-        ws[f"J{next_row}"] = f'=IF(G{next_row}="Win",{stake}*(I{next_row}-1),IF(G{next_row}="Push",E{next_row},0))'
+        ws[f"K{next_row}"] = f'=IF(H{next_row}="Win",{stake}*(J{next_row}-1),IF(H{next_row}="Push",F{next_row},0))'
     else:
-        ws[f"J{next_row}"] = f'=IF(G{next_row}="Win",E{next_row}*I{next_row},IF(G{next_row}="Push",E{next_row},0))'
+        ws[f"K{next_row}"] = f'=IF(H{next_row}="Win",F{next_row}*J{next_row},IF(H{next_row}="Push",F{next_row},0))'
 
     # Net PnL
-    ws[f"K{next_row}"] = f'=IF(G{next_row}="", "", J{next_row}-E{next_row})'
+    ws[f"L{next_row}"] = f'=IF(H{next_row}="", "", K{next_row}-F{next_row})'
 
     # Cumulative PnL
-    ws[f"L{next_row}"] = f'=IF(K{next_row}="", "", SUM(K$2:K{next_row}))'
+    ws[f"M{next_row}"] = f'=IF(L{next_row}="", "", SUM(L$2:L{next_row}))'
 
     # Conditional formatting for Net PnL
     green_fill = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
     red_fill = PatternFill(start_color="FFC7CE", end_color="FFC7CE", fill_type="solid")
-    ws.conditional_formatting.add(f"K2:K{ws.max_row}",
+    ws.conditional_formatting.add(f"L2:L{ws.max_row}",
                                   CellIsRule(operator='greaterThan', formula=['0'], fill=green_fill))
-    ws.conditional_formatting.add(f"K2:K{ws.max_row}",
+    ws.conditional_formatting.add(f"L2:L{ws.max_row}",
                                   CellIsRule(operator='lessThan', formula=['0'], fill=red_fill))
 
     # -------------------------------
@@ -90,16 +133,16 @@ def log_bet(date, sportsbook, bet_type, selection, odds, stake=0, result="", bon
         ws_dash["A1"], ws_dash["B1"] = "Metric", "Value"
 
     # Metrics
-    ws_dash["A2"], ws_dash["B2"] = "Total PnL ($)", f"=SUM('Bet Log'!K2:K{ws.max_row})"
-    ws_dash["A3"], ws_dash["B3"] = "Total Stake ($)", f"=SUM('Bet Log'!E2:E{ws.max_row})"
-    ws_dash["A4"], ws_dash["B4"] = "Wins", f'=COUNTIF(\'Bet Log\'!G2:G{ws.max_row},"Win")'
-    ws_dash["A5"], ws_dash["B5"] = "Total Bets", f'=COUNTA(\'Bet Log\'!G2:G{ws.max_row})'
-    ws_dash["A6"], ws_dash["B6"] = "Pending Bets", f'=COUNTIF(\'Bet Log\'!G2:G{ws.max_row},"")'
+    ws_dash["A2"], ws_dash["B2"] = "Total PnL ($)", f"=SUM('Bet Log'!L2:L{ws.max_row})"
+    ws_dash["A3"], ws_dash["B3"] = "Total Stake ($)", f"=SUM('Bet Log'!F2:F{ws.max_row})"
+    ws_dash["A4"], ws_dash["B4"] = "Wins", f'=COUNTIF(\'Bet Log\'!H2:H{ws.max_row},"Win")'
+    ws_dash["A5"], ws_dash["B5"] = "Total Bets", f'=COUNTA(\'Bet Log\'!H2:H{ws.max_row})'
+    ws_dash["A6"], ws_dash["B6"] = "Pending Bets", f'=COUNTIF(\'Bet Log\'!H2:H{ws.max_row},"")'
     ws_dash["A7"], ws_dash["B7"] = "Win %", f"=IF(B5=0,0,B4/B5)"
     ws_dash["A8"], ws_dash["B8"] = "ROI (%)", f"=IF(B3=0,0,B2/B3)"
 
     wb.save(FILE_PATH)
-    print(f"✅ Logged bet in row {next_row}: {bet_type} - {selection} ({sportsbook})")
+    print(f"✅ Logged bet in row {next_row}: {league} {market} - {pick} ({sportsbook})")
 
 
 # -------------------------------
@@ -118,14 +161,15 @@ if __name__ == "__main__":
         if date == "":
             date = datetime.today().strftime("%m/%d/%y")
 
-        bet_type = input("Bet Type: ").strip()
-        selection = input("Selection: ").strip()
+        league = input("League (e.g., NFL, NBA): ").strip()
+        market = input("Market: ").strip()
+        pick = input("Pick: ").strip()
         odds = int(input("Odds (e.g., -110, +125): ").strip())
         stake = float(input("Stake ($): ").strip())
         result = input("Result (Win/Loss/Push/blank): ").strip()
         bonus = input("Bonus bet? (y/n): ").strip().lower() == "y"
 
-        log_bet(date, sportsbook, bet_type, selection, odds, stake, result, bonus)
+        log_bet(date, sportsbook, league, market, pick, odds, stake, result, bonus)
 
     print("✅ All bets logged successfully!")
 
@@ -138,8 +182,9 @@ if __name__ == "__main__":
 # log_bet(
 #     date="9/5/25",
 #     sportsbook="Fanatics",
-#     bet_type="Moneyline",
-#     selection="Kansas City Chiefs ML vs LA Chargers",
+#     league="NFL",
+#     market="Moneyline",
+#     pick="Kansas City Chiefs ML vs LA Chargers",
 #     odds=-170,
 #     stake=10,
 #     result="Loss",
@@ -151,8 +196,9 @@ if __name__ == "__main__":
 # log_bet(
 #     date="9/11/25",
 #     sportsbook="Hard Rock",
-#     bet_type="Total Points Odd/Even",
-#     selection="Washington Commanders vs Green Bay Packers - Even",
+#     league="NFL",
+#     market="Total Points Odd/Even",
+#     pick="Washington Commanders vs Green Bay Packers - Even",
 #     odds=125,
 #     stake=80,
 #     result="Loss",
@@ -163,8 +209,9 @@ if __name__ == "__main__":
 # log_bet(
 #     date="9/11/25",
 #     sportsbook="Fanatics",
-#     bet_type="Total Points Odd/Even",
-#     selection="Washington Commanders vs Green Bay Packers - Odd",
+#     league="NFL",
+#     market="Total Points Odd/Even",
+#     pick="Washington Commanders vs Green Bay Packers - Odd",
 #     odds=-125,
 #     stake=100,  # real money won from bonus
 #     result="Win",
@@ -175,8 +222,9 @@ if __name__ == "__main__":
 # log_bet(
 #     date="9/12/25",
 #     sportsbook="Hard Rock",
-#     bet_type="4-leg parlay, Bills, Ravens, Bangels, Chiefs = win",
-#     selection="Bills, Ravens, Bangels, Chiefs = win",
+#     league="NFL",
+#     market="4-leg parlay, Bills, Ravens, Bangels, Chiefs = win",
+#     pick="Bills, Ravens, Bangels, Chiefs = win",
 #     odds=+364,
 #     stake=25,  # real money won from bonus
 #     result="",
@@ -187,8 +235,9 @@ if __name__ == "__main__":
 # log_bet(
 #     date="9/12/25",
 #     sportsbook="Hard Rock",
-#     bet_type="Point-Spread",
-#     selection="Falcons -5.5",
+#     league="NFL",
+#     market="Point-Spread",
+#     pick="Falcons -5.5",
 #     odds=+375,
 #     stake=25,  # real money won from bonus
 #     result="",
@@ -199,10 +248,12 @@ if __name__ == "__main__":
 # log_bet(
 #     date="9/13/25",
 #     sportsbook="Hard Rock",
-#     bet_type="To have 5+ Q1 Recieving Yards",
-#     selection="Jahmyr Gibbs",
+#     league="NFL",
+#     market="To have 5+ Q1 Recieving Yards",
+#     pick="Jahmyr Gibbs",
 #     odds=+125,
 #     stake=25,  # real money won from bonus
 #     result="",
 #     bonus=True
 # )
+
